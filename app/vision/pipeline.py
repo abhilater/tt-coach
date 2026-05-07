@@ -15,24 +15,33 @@ logger = logging.getLogger(__name__)
 
 
 def _resolve_existing_sample_image(image_path: str, data_dir: Path) -> Path | None:
+    data_resolved = data_dir.resolve()
     p = Path(image_path)
     if p.is_file():
         return p.resolve()
-    under_data = (data_dir / image_path).resolve()
-    try:
-        under_data.relative_to(data_dir.resolve())
-    except ValueError:
-        return None
-    return under_data if under_data.is_file() else None
+    candidates: list[Path] = []
+    if not p.is_absolute() and p.parts and p.parts[0] == data_resolved.name:
+        candidates.append((data_resolved / Path(*p.parts[1:])).resolve())
+    candidates.append((data_resolved / image_path).resolve())
+    for under_data in candidates:
+        try:
+            under_data.relative_to(data_resolved)
+        except ValueError:
+            continue
+        if under_data.is_file():
+            return under_data
+    return None
 
 
 def _image_path_for_db(path: Path, data_dir: Path) -> str:
     data_resolved = data_dir.resolve()
     try:
         rel = path.resolve().relative_to(data_resolved)
-        return str(rel).replace("\\", "/")
     except ValueError:
-        return str(path)
+        return str(path).replace("\\", "/")
+    if rel.parts and rel.parts[0] == data_resolved.name:
+        rel = Path(*rel.parts[1:])
+    return str(rel).replace("\\", "/")
 
 
 def load_or_create_index() -> FaceIndex:

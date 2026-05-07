@@ -31,15 +31,23 @@ def coach_sample_thumb(image_path: str | None) -> str | None:
     if not image_path:
         return None
     data_dir = get_settings().data_dir.resolve()
-    p = Path(image_path)
-    try:
-        if p.is_absolute():
-            rel = p.resolve().relative_to(data_dir)
-        else:
-            rel = (data_dir / p).resolve().relative_to(data_dir)
-    except ValueError:
-        return None
-    return media_url(str(rel).replace("\\", "/"))
+    raw = Path(image_path)
+    candidates: list[Path] = []
+    if raw.is_absolute():
+        candidates.append(raw.resolve())
+    else:
+        if raw.parts and raw.parts[0] == data_dir.name:
+            candidates.append((data_dir / Path(*raw.parts[1:])).resolve())
+        candidates.append((data_dir / raw).resolve())
+    for cand in candidates:
+        try:
+            rel = cand.relative_to(data_dir)
+        except ValueError:
+            continue
+        if rel.parts and rel.parts[0] == data_dir.name:
+            rel = Path(*rel.parts[1:])
+        return media_url(str(rel).replace("\\", "/"))
+    return None
 
 
 @router.get("/", response_class=HTMLResponse)
