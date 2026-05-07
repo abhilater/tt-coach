@@ -1,6 +1,20 @@
 # TT Coach — AI Table Tennis Curator
 
-Modular monolith: FastAPI + HTMX + SQLite. Ingests YouTube coaching videos, transcribes locally (`faster-whisper`), analyzes via pluggable LLMs (Ollama / Gemini / OpenAI), optional coach face matching (InsightFace + FAISS).
+Modular monolith: FastAPI + HTMX + SQLite. Discovers YouTube coaching videos, admits only those that face-match a *preferred coach* you've enrolled, transcribes locally (`faster-whisper`), analyzes them via pluggable LLMs (Ollama / Gemini / OpenAI) with insights tailored to your player profile.
+
+## Discovery & admission model
+
+A video reaches the feed if and only if a preferred coach (one you've enrolled with face samples on `/coaches`) is detected by face similarity at or above `PREFERRED_COACH_MIN_CONFIDENCE` (default 0.55).
+
+Discovery surfaces (each one is just a candidate pool — admission still requires a face match):
+
+1. **Seed channels** — channel IDs in `seeds/youtube_channels.txt`. Their recent uploads form the primary candidate pool.
+2. **Preferred-coach sample channels** — for each coach you've enrolled in `/coaches`, the YouTube channels hosting their `CoachSample` URLs are auto-derived and their recent uploads added to the pool.
+3. **Related videos (1 hop)** — for each candidate above, YouTube's "related videos" sidebar is scraped via `yt-dlp`, bounded by `RELATED_PER_SEED` and `RELATED_TOTAL_CAP`. (The official Data API endpoint for related videos was removed in 2023; `yt-dlp --dump-single-json` is the practical substitute.)
+
+If `preferred_coaches` on `/profile` is empty, no videos will be admitted. Set them up first.
+
+The player profile (`level`, `play_style`, `goals`, `weaknesses`) is used **only** to shape the LLM analyst's framing — emphasizing tips and mistakes relevant to your weaknesses, aligning `try_next_session` with your goals. It does not influence which videos are admitted, nor any ranking weight.
 
 ## Prerequisites
 
@@ -88,7 +102,14 @@ Open http://127.0.0.1:8000
 
 ## Daily refresh
 
-APScheduler runs a daily job at `SCHEDULER_REFRESH_HOUR`/`SCHEDULER_REFRESH_MINUTE` in **UTC** (default 06:00 UTC). Trigger manually:
+APScheduler runs a daily job at `SCHEDULER_REFRESH_HOUR`/`SCHEDULER_REFRESH_MINUTE` in **UTC** (default 06:00 UTC). Order of operations within a single run:
+
+1. **Discover** candidate videos from seed channels + preferred-coach sample channels + 1-hop related-video expansion.
+2. **Face match** every un-admitted candidate (cheap: 16 frames + FAISS). Flip `Video.is_admitted` based on whether any preferred coach matches at `PREFERRED_COACH_MIN_CONFIDENCE`.
+3. **Analyze** only admitted videos (transcribe + LLM). Skipped candidates never incur LLM/Whisper cost.
+4. **Rank** with `compute_personalized_scores` and rebuild `Recommendation` rows for the day.
+
+Trigger manually:
 
 ```bash
 python -m app.scheduler.run_once

@@ -36,7 +36,18 @@ def compute_personalized_scores(db: Session, feed_date: str) -> int:
         for w in profile.weaknesses or []:
             weakness_topics.add(str(w).lower().replace(" ", "_"))
 
-    videos = db.query(Video).all()
+    videos = db.query(Video).filter(Video.is_admitted.is_(True)).all()
+    admitted_ids = {v.id for v in videos}
+
+    stale_q = db.query(Recommendation)
+    if admitted_ids:
+        stale_q = stale_q.filter(~Recommendation.video_id.in_(admitted_ids))
+    stale = stale_q.all()
+    for r in stale:
+        db.delete(r)
+    if stale:
+        db.commit()
+
     analyses = {a.video_id: a for a in db.query(VideoAnalysis).all()}
     channels = {c.id: c for c in db.query(Channel).all()}
 

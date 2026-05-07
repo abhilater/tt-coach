@@ -55,14 +55,21 @@ def persist_index(fi: FaceIndex) -> None:
 
 
 def enroll_coach_samples(db: Session, coach_id: int) -> int:
-    """Re-build embeddings for all samples of coach and append to index."""
+    """Re-build embeddings for all samples of coach and append to index.
+
+    Embeddings whose detection score is below ``settings.face_min_det_score`` are
+    discarded so the FAISS index stays clean of blurry / oblique / mis-detected
+    crops, which otherwise drag false-positive rates up at the matching stage.
+    """
     coach = db.query(Coach).filter(Coach.id == coach_id).first()
     if not coach:
         return 0
+    settings = get_settings()
     fi = load_or_create_index()
     added = 0
+    skipped_low_quality = 0
     samples = db.query(CoachSample).filter(CoachSample.coach_id == coach_id).all()
-    data_dir = get_settings().data_dir
+    data_dir = settings.data_dir
     frames_dir = data_dir / "coach_frames"
 
     for samp in samples:
@@ -81,7 +88,10 @@ def enroll_coach_samples(db: Session, coach_id: int) -> int:
             best_p, _, _ = max(meta, key=lambda t: t[2])
             samp.image_path = _image_path_for_db(best_p, data_dir)
             db.commit()
-            for _path, emb, _score in meta:
+            for _path, emb, score in meta:
+                if score < settings.face_min_det_score:
+                    skipped_low_quality += 1
+                    continue
                 fid = fi.add(emb, coach_id=coach_id, sample_id=samp.id)
                 samp.embedding_id = fid
                 added += 1
@@ -95,18 +105,28 @@ def enroll_coach_samples(db: Session, coach_id: int) -> int:
             )
     persist_index(fi)
     db.commit()
-    logger.info("coach_enroll coach_id=%s embeddings_added=%s", coach_id, added)
+    logger.info(
+        "coach_enroll coach_id=%s embeddings_added=%s skipped_low_quality=%s threshold=%.2f",
+        coach_id,
+        added,
+        skipped_low_quality,
+        settings.face_min_det_score,
+    )
     return added
 
 
-def match_video_coaches(db: Session, video: Video, threshold: float = 0.55) -> None:
+def match_video_coaches(db: Session, video: Video, threshold: float | None = None) -> None:
     fi = load_or_create_index()
     if fi.index.ntotal == 0:
         return
 
     settings = get_settings()
+    if threshold is None:
+        threshold = settings.preferred_coach_min_confidence
     frames_dir = settings.data_dir / "video_frames"
-    paths = extract_frames_evenly(video.url, frames_dir, video.external_id, num_frames=8)
+    paths = extract_frames_evenly(
+        video.url, frames_dir, video.external_id, num_frames=settings.face_match_frames
+    )
     from app.vision.embeddings import embedding_from_image
 
     best_global: dict[int, float] = {}

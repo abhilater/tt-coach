@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 
 class DrillItem(BaseModel):

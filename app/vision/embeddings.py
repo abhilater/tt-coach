@@ -21,6 +21,12 @@ def get_face_app():
 
 
 def embedding_from_image(path: Path) -> np.ndarray | None:
+    """Return the embedding of the highest-confidence face in the image.
+
+    Multi-face frames are common in coaching videos (coach + student). Picking
+    the strongest detection mirrors how `embeddings_with_meta` behaves during
+    enrollment and avoids arbitrary `faces[0]` selection from the detector.
+    """
     import cv2
 
     img = cv2.imread(str(path))
@@ -29,8 +35,8 @@ def embedding_from_image(path: Path) -> np.ndarray | None:
     faces = get_face_app().get(img)
     if not faces:
         return None
-    emb = faces[0].normed_embedding.astype("float32")
-    return emb
+    f = max(faces, key=lambda x: float(getattr(x, "det_score", 0.0)))
+    return f.normed_embedding.astype("float32")
 
 
 def embeddings_from_paths(paths: list[Path]) -> list[np.ndarray]:

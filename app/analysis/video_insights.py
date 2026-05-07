@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -9,20 +10,32 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.ingest.youtube import yt_dlp_transcript
 from app.llm.factory import complete_for_task
-from app.llm.prompts import prompt_meta, system_analyst, user_analyst
+from app.llm.prompts import format_player_profile, prompt_meta, system_analyst, user_analyst
 from app.llm.schemas import VideoInsights
-from app.models import Transcript, Video, VideoAnalysis
+from app.models import Transcript, UserProfile, Video, VideoAnalysis
 from app.transcribe.whisper import transcribe_audio_file
 
 logger = logging.getLogger(__name__)
 
+_FFMPEG_WARN_EMITTED = False
+
 
 def ensure_audio_wav(video: Video, data_dir: Path) -> Path | None:
-    """Download/extract WAV via yt-dlp."""
+    """Download/extract WAV via yt-dlp. Requires ffmpeg for postprocessing."""
     dest_base = data_dir / "audio" / video.external_id
     wav_path = Path(str(dest_base) + ".wav")
     if wav_path.exists():
         return wav_path
+    if shutil.which("ffmpeg") is None:
+        global _FFMPEG_WARN_EMITTED
+        if not _FFMPEG_WARN_EMITTED:
+            logger.warning(
+                "ffmpeg_not_installed: audio extraction & Whisper transcripts disabled; "
+                "falling back to YouTube captions only. Install via 'brew install ffmpeg' "
+                "(macOS) or your distro's package manager."
+            )
+            _FFMPEG_WARN_EMITTED = True
+        return None
     try:
         subprocess.run(
             [
@@ -84,8 +97,11 @@ async def analyze_video(db: Session, video: Video) -> VideoAnalysis | None:
     excerpt = (tr.text if tr else "") or ""
     description = video.description or ""
 
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    profile_block = format_player_profile(profile)
+
     sys_p = system_analyst()
-    usr_p = user_analyst(video.title, description, excerpt)
+    usr_p = user_analyst(video.title, description, excerpt, profile_block)
 
     insights: VideoInsights = await complete_for_task("insights", sys_p, usr_p, VideoInsights)
 

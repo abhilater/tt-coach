@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import subprocess
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -12,12 +13,36 @@ from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.ingest.dedupe import dedupe_key
 from app.ingest.topics import infer_topics_from_text
 from app.ingest.url_validate import extract_youtube_video_id
-from app.models import Channel, Video
+from app.models import Channel, Coach, CoachSample, UserProfile, Video
 
 logger = logging.getLogger(__name__)
+
+_VTT_TIMING_RE = re.compile(r"^\s*\d{1,2}:\d{2}(?::\d{2})?\.\d{3}\s*-->")
+_VTT_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _vtt_to_text(content: str) -> str:
+    """Convert a WebVTT/SRT-ish caption file to plain text (no ffmpeg needed)."""
+    out: list[str] = []
+    last = ""
+    for raw in content.splitlines():
+        s = raw.strip()
+        if not s:
+            continue
+        if s.startswith(("WEBVTT", "Kind:", "Language:", "NOTE", "STYLE")):
+            continue
+        if _VTT_TIMING_RE.match(s) or "-->" in s:
+            continue
+        if s.isdigit():
+            continue
+        s = _VTT_TAG_RE.sub("", s).strip()
+        if not s or s == last:
+            continue
+        out.append(s)
+        last = s
+    return " ".join(out).strip()
 
 
 def _published_after(days: int) -> str:
@@ -54,29 +79,6 @@ def fetch_video_details(api_key: str, video_ids: list[str]) -> list[dict]:
         resp = yt.videos().list(part="snippet,contentDetails", id=",".join(chunk)).execute()
         out.extend(resp.get("items", []))
     return out
-
-
-def search_videos(api_key: str, query: str, days: int, max_results: int = 25) -> list[str]:
-    yt = yt_service(api_key)
-    ids: list[str] = []
-    req = yt.search().list(
-        part="id",
-        q=query,
-        type="video",
-        maxResults=max_results,
-        order="date",
-        publishedAfter=_published_after(days),
-    )
-    while req is not None and len(ids) < max_results:
-        resp = req.execute()
-        for it in resp.get("items", []):
-            vid = it.get("id", {}).get("videoId")
-            if vid:
-                ids.append(vid)
-        req = yt.search().list_next(req, resp)
-        if len(ids) >= max_results:
-            break
-    return ids[:max_results]
 
 
 def channel_uploads(api_key: str, channel_external_id: str, days: int, max_results: int = 50) -> list[str]:
@@ -145,8 +147,6 @@ def yt_dlp_transcript(video_url: str) -> tuple[str | None, list | None]:
         "--write-auto-sub",
         "--sub-lang",
         "en",
-        "--convert-subs",
-        "srt",
         "-o",
         "/tmp/ttcoach_%(id)s.%(ext)s",
         video_url,
@@ -156,11 +156,15 @@ def yt_dlp_transcript(video_url: str) -> tuple[str | None, list | None]:
         vid = extract_youtube_video_id(video_url)
         if not vid:
             return None, None
-        p = Path(f"/tmp/ttcoach_{vid}.en.srt")
-        if not p.exists():
+        candidates = sorted(Path("/tmp").glob(f"ttcoach_{vid}.*.vtt")) + sorted(
+            Path("/tmp").glob(f"ttcoach_{vid}.*.srt")
+        )
+        if not candidates:
             return None, None
-        text = p.read_text(errors="ignore")
-        return text, None
+        sub_path = candidates[0]
+        raw = sub_path.read_text(errors="ignore")
+        text = _vtt_to_text(raw) if sub_path.suffix.lower() == ".vtt" else raw.strip()
+        return (text or None), None
     except Exception as e:
         logger.debug("yt_dlp_transcript_failed %s", e)
         return None, None
@@ -256,52 +260,210 @@ def _parse_iso_duration(iso: str) -> int | None:
     return secs
 
 
+def read_seed_channels(path: Path) -> list[str]:
+    """Read channel IDs from a seeds file. Skips blanks and comment lines."""
+    if not path.exists():
+        return []
+    out: list[str] = []
+    for line in path.read_text().splitlines():
+        s = line.strip()
+        if s and not s.startswith("#"):
+            out.append(s)
+    return out
+
+
+def preferred_coach_seed_channels(db: Session, api_key: str) -> list[str]:
+    """Return distinct YouTube channel IDs hosting any preferred coach's CoachSample videos.
+
+    Resolves UserProfile.preferred_coaches (which may contain ints or display_name strings)
+    to coach IDs, walks each coach's CoachSample.source_url list, extracts the YouTube
+    video ID, and batches videos.list to map video -> channel.
+    """
+    if not api_key:
+        return []
+    profile = db.query(UserProfile).filter(UserProfile.id == 1).first()
+    if not profile or not profile.preferred_coaches:
+        return []
+
+    coach_ids: set[int] = set()
+    for token in profile.preferred_coaches or []:
+        if isinstance(token, int):
+            coach_ids.add(token)
+        else:
+            c = db.query(Coach).filter(Coach.display_name == str(token)).first()
+            if c:
+                coach_ids.add(c.id)
+    if not coach_ids:
+        return []
+
+    sample_video_ids: list[str] = []
+    samples = db.query(CoachSample).filter(CoachSample.coach_id.in_(coach_ids)).all()
+    for s in samples:
+        if not s.source_url:
+            continue
+        vid = extract_youtube_video_id(s.source_url)
+        if vid:
+            sample_video_ids.append(vid)
+    if not sample_video_ids:
+        return []
+
+    items = fetch_video_details(api_key, list(set(sample_video_ids)))
+    channels: set[str] = set()
+    for it in items:
+        ch = it.get("snippet", {}).get("channelId")
+        if ch:
+            channels.add(ch)
+    return sorted(channels)
+
+
+def yt_dlp_related_video_ids(video_url: str, limit: int) -> list[str]:
+    """Scrape YouTube's watch-page 'related videos' sidebar via yt-dlp.
+
+    Returns up to ``limit`` related video IDs. The official Data API endpoint
+    (search.list?relatedToVideoId=) was deprecated in 2023; this is the
+    pragmatic substitute. Failures (timeout, parse error, network) return [].
+    """
+    if limit <= 0:
+        return []
+    try:
+        proc = subprocess.run(
+            [
+                "yt-dlp",
+                "--dump-single-json",
+                "--skip-download",
+                "--no-playlist",
+                video_url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+    except Exception as e:
+        logger.debug("yt_dlp_related_subprocess_failed url=%s err=%s", video_url, type(e).__name__)
+        return []
+    if proc.returncode != 0 or not proc.stdout:
+        return []
+    try:
+        meta = json.loads(proc.stdout.split("\n", 1)[0])
+    except json.JSONDecodeError:
+        return []
+    related = meta.get("related_videos") or []
+    out: list[str] = []
+    for entry in related:
+        if not isinstance(entry, dict):
+            continue
+        vid = entry.get("id") or entry.get("video_id")
+        if not vid:
+            url = entry.get("url") or ""
+            vid = extract_youtube_video_id(url) if url else None
+        if vid and vid not in out:
+            out.append(vid)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _expand_related(seed_video_ids: list[str], per_seed: int, total_cap: int) -> set[str]:
+    """1-hop related-video expansion. Bounded by per-seed and total caps."""
+    if total_cap <= 0 or per_seed <= 0:
+        return set()
+    seed_set = set(seed_video_ids)
+    discovered: set[str] = set()
+    for vid in seed_video_ids:
+        if len(discovered) >= total_cap:
+            break
+        url = f"https://www.youtube.com/watch?v={vid}"
+        try:
+            related = yt_dlp_related_video_ids(url, per_seed)
+        except Exception as e:
+            logger.warning("related_expansion_failed seed=%s err=%s", vid, type(e).__name__)
+            continue
+        for r in related:
+            if r in discovered or r in seed_set:
+                continue
+            discovered.add(r)
+            if len(discovered) >= total_cap:
+                break
+    return discovered
+
+
 def run_ingestion(db: Session, days: int = 7) -> dict[str, int]:
+    """Discover candidate videos under the new admission model.
+
+    Sources (videos are *candidates*; admission is decided later by face match):
+      1. Recent uploads of seed channels from seeds/youtube_channels.txt (marked is_trusted=True).
+      2. Recent uploads of channels derived from preferred coaches' CoachSample URLs.
+      3. yt-dlp related-video expansion (1 hop) from sources 1+2, bounded by
+         settings.related_per_seed and settings.related_total_cap.
+
+    No admission filter is applied here. The scheduler runs face matching on every
+    new candidate and flips Video.is_admitted based on preferred-coach presence.
+    """
     settings = get_settings()
     ingest_run_id = str(uuid.uuid4())
-    counts = {"videos_upserted": 0, "queries": 0, "channels": 0}
+    counts = {
+        "videos_upserted": 0,
+        "trusted_channels": 0,
+        "coach_seed_channels": 0,
+        "related_discovered": 0,
+    }
 
-    queries_path = Path("seeds/search_queries.txt")
-    channels_path = Path("seeds/youtube_channels.txt")
+    if not settings.youtube_api_key:
+        logger.warning("ingestion_no_youtube_api_key — discovery disabled")
+        return counts
 
-    video_ids: set[str] = set()
+    trusted_channel_ids = read_seed_channels(Path("seeds/youtube_channels.txt"))
+    coach_channel_ids = preferred_coach_seed_channels(db, settings.youtube_api_key)
+    counts["trusted_channels"] = len(trusted_channel_ids)
+    counts["coach_seed_channels"] = len(coach_channel_ids)
 
-    if settings.youtube_api_key:
-        if queries_path.exists():
-            for line in queries_path.read_text().splitlines():
-                q = line.strip()
-                if not q or q.startswith("#"):
-                    continue
-                counts["queries"] += 1
-                video_ids.update(search_videos(settings.youtube_api_key, q, days))
+    trusted_channels: dict[str, Channel] = {}
+    for cid in trusted_channel_ids:
+        trusted_channels[cid] = upsert_channel(db, cid)
+    candidate_channels: dict[str, Channel] = {}
+    for cid in coach_channel_ids:
+        if cid in trusted_channels:
+            continue
+        candidate_channels[cid] = upsert_channel(db, cid)
 
-        if channels_path.exists():
-            for line in channels_path.read_text().splitlines():
-                cid = line.strip()
-                if not cid or cid.startswith("#"):
-                    continue
-                counts["channels"] += 1
-                video_ids.update(channel_uploads(settings.youtube_api_key, cid, days))
+    for cid, ch in trusted_channels.items():
+        if not ch.is_trusted:
+            ch.is_trusted = True
+    for cid, ch in candidate_channels.items():
+        if ch.is_trusted:
+            ch.is_trusted = False
+    db.commit()
 
-    details = fetch_video_details(settings.youtube_api_key, list(video_ids)) if settings.youtube_api_key else []
+    seed_video_ids: set[str] = set()
+    for cid in trusted_channel_ids:
+        seed_video_ids.update(channel_uploads(settings.youtube_api_key, cid, days))
+    for cid in coach_channel_ids:
+        if cid in trusted_channels:
+            continue
+        seed_video_ids.update(channel_uploads(settings.youtube_api_key, cid, days))
 
-    # Fallback: allow manual video IDs file
-    manual = Path("seeds/manual_video_ids.txt")
-    if manual.exists():
-        extra = [x.strip() for x in manual.read_text().splitlines() if len(x.strip()) == 11]
-        if extra and settings.youtube_api_key:
-            details.extend(fetch_video_details(settings.youtube_api_key, extra))
+    related_ids = _expand_related(
+        list(seed_video_ids),
+        per_seed=settings.related_per_seed,
+        total_cap=settings.related_total_cap,
+    )
+    counts["related_discovered"] = len(related_ids)
+
+    all_video_ids = seed_video_ids | related_ids
+    details = fetch_video_details(settings.youtube_api_key, list(all_video_ids))
 
     for item in details:
-        upsert_video_from_api_item(db, item, settings, ingest_run_id)
-        counts["videos_upserted"] += 1
+        v = upsert_video_from_api_item(db, item, settings, ingest_run_id)
+        if v is not None:
+            counts["videos_upserted"] += 1
 
     db.commit()
     logger.info(
-        "ingestion_complete run=%s upserted=%s queries=%s channels=%s",
+        "ingestion_complete run=%s upserted=%s trusted=%s coach_seeds=%s related=%s",
         ingest_run_id,
         counts["videos_upserted"],
-        counts["queries"],
-        counts["channels"],
+        counts["trusted_channels"],
+        counts["coach_seed_channels"],
+        counts["related_discovered"],
     )
     return counts
