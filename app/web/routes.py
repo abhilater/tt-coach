@@ -34,8 +34,9 @@ def feed(request: Request, db: Session = Depends(get_db)):
     for r in recs:
         items.append({"rec": r, "video": r.video, "thumb": media_url(r.video.thumbnail_path)})
     return templates.TemplateResponse(
-        "feed.html",
-        {"request": request, "items": items},
+        request=request,
+        name="feed.html",
+        context={"items": items},
     )
 
 
@@ -47,9 +48,9 @@ def video_detail(request: Request, video_id: int, db: Session = Depends(get_db))
     ana = db.query(VideoAnalysis).filter(VideoAnalysis.video_id == video_id).first()
     next_videos = watch_next(db, video_id, limit=5)
     return templates.TemplateResponse(
-        "video_detail.html",
-        {
-            "request": request,
+        request=request,
+        name="video_detail.html",
+        context={
             "video": v,
             "analysis": ana,
             "thumb": media_url(v.thumbnail_path),
@@ -61,7 +62,11 @@ def video_detail(request: Request, video_id: int, db: Session = Depends(get_db))
 @router.get("/coaches", response_class=HTMLResponse)
 def coaches_page(request: Request, db: Session = Depends(get_db)):
     coaches = db.query(Coach).order_by(Coach.display_name).all()
-    return templates.TemplateResponse("coaches.html", {"request": request, "coaches": coaches})
+    return templates.TemplateResponse(
+        request=request,
+        name="coaches.html",
+        context={"coaches": coaches},
+    )
 
 
 @router.post("/coaches")
@@ -92,7 +97,11 @@ def coach_add_sample(
 @router.get("/profile", response_class=HTMLResponse)
 def profile_get(request: Request, db: Session = Depends(get_db)):
     p = db.query(UserProfile).filter(UserProfile.id == 1).first()
-    return templates.TemplateResponse("profile.html", {"request": request, "profile": p})
+    return templates.TemplateResponse(
+        request=request,
+        name="profile.html",
+        context={"profile": p},
+    )
 
 
 @router.post("/profile")

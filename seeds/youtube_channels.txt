@@ -1,1 +1,3 @@
 # Add YouTube channel IDs here (one per line), e.g. UCxxxxxxxxxxxxxxxxxxxxxxxxxx
+UCLdwDMdtrcW_WlhXI0Kli9Q
+UC31Ai8sWE1LkNv7eO9rYwPQ

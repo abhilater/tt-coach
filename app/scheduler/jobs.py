@@ -18,13 +18,46 @@ logger = logging.getLogger(__name__)
 _scheduler: BackgroundScheduler | None = None
 
 
+_LLM_QUOTA_EXC_NAMES = {"ResourceExhausted", "RateLimitError", "TooManyRequests"}
+
+
+def _is_llm_quota_error(exc: BaseException) -> bool:
+    name = type(exc).__name__
+    if name in _LLM_QUOTA_EXC_NAMES:
+        return True
+    msg = str(exc).lower()
+    return "429" in msg and ("quota" in msg or "rate limit" in msg)
+
+
 async def _analyze_batch(db: Session, videos: list[Video]) -> None:
+    quota_exhausted = False
     for v in videos:
+        if quota_exhausted:
+            logger.warning("analyze_skipped_quota vid=%s", v.external_id)
+            continue
         try:
             await analyze_video(db, v)
             match_video_coaches(db, v)
         except Exception as e:
-            logger.warning("analyze_failed vid=%s err=%s", v.external_id, type(e).__name__)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            if _is_llm_quota_error(e):
+                quota_exhausted = True
+                logger.warning(
+                    "llm_quota_exhausted task=insights vid=%s provider_err=%s; "
+                    "remaining videos in batch will be skipped",
+                    v.external_id,
+                    type(e).__name__,
+                )
+            else:
+                logger.warning(
+                    "analyze_failed vid=%s err=%s msg=%s",
+                    v.external_id,
+                    type(e).__name__,
+                    str(e)[:200].replace("\n", " "),
+                )
 
 
 def daily_refresh_job(SessionLocal: sessionmaker) -> None:
