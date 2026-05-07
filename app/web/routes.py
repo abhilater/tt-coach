@@ -1,9 +1,11 @@
 import logging
+import math
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
@@ -56,15 +58,41 @@ def home():
 
 
 @router.get("/feed", response_class=HTMLResponse)
-def feed(request: Request, db: Session = Depends(get_db)):
-    recs = db.query(Recommendation).order_by(Recommendation.score.desc()).limit(50).all()
+def feed(
+    request: Request,
+    db: Session = Depends(get_db),
+    page: int = Query(1),
+    per_page: int = Query(20),
+):
+    page = max(1, page)
+    per_page = max(1, min(50, per_page))
+    total = db.query(func.count(Recommendation.id)).scalar() or 0
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    if page > total_pages and total > 0:
+        page = total_pages
+    offset = (page - 1) * per_page
+    recs = (
+        db.query(Recommendation)
+        .order_by(Recommendation.score.desc())
+        .offset(offset)
+        .limit(per_page)
+        .all()
+    )
     items = []
     for r in recs:
         items.append({"rec": r, "video": r.video, "thumb": media_url(r.video.thumbnail_path)})
     return templates.TemplateResponse(
         request=request,
         name="feed.html",
-        context={"items": items},
+        context={
+            "items": items,
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_prev": page > 1,
+            "has_next": page < total_pages,
+        },
     )
 
 

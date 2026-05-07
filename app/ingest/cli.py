@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 def main() -> None:
     parser = argparse.ArgumentParser(description="TT Coach ingestion CLI")
     parser.add_argument("--since-days", type=int, default=7, help="Published-after window")
+    parser.add_argument(
+        "--max-per-channel",
+        type=int,
+        default=50,
+        help="Max uploads to fetch per channel (use ~500 for a 90-day backfill on active channels)",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
@@ -24,7 +30,11 @@ def main() -> None:
     SessionLocal = sessionmaker(bind=get_engine())
     db = SessionLocal()
     try:
-        counts = run_ingestion(db, days=args.since_days)
+        counts = run_ingestion(
+            db,
+            days=args.since_days,
+            max_per_channel=args.max_per_channel,
+        )
         logger.info("ingestion_counts %s", counts)
     finally:
         db.close()

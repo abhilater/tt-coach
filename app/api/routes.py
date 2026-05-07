@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+import math
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
@@ -15,8 +18,25 @@ def health():
 
 
 @router.get("/feed")
-def api_feed(db: Session = Depends(get_db)):
-    recs = db.query(Recommendation).order_by(Recommendation.score.desc()).limit(50).all()
+def api_feed(
+    db: Session = Depends(get_db),
+    page: int = Query(1),
+    per_page: int = Query(20),
+):
+    page = max(1, page)
+    per_page = max(1, min(50, per_page))
+    total = db.query(func.count(Recommendation.id)).scalar() or 0
+    total_pages = max(1, math.ceil(total / per_page)) if total else 1
+    if page > total_pages and total > 0:
+        page = total_pages
+    offset = (page - 1) * per_page
+    recs = (
+        db.query(Recommendation)
+        .order_by(Recommendation.score.desc())
+        .offset(offset)
+        .limit(per_page)
+        .all()
+    )
     out = []
     for r in recs:
         v = r.video
@@ -32,7 +52,13 @@ def api_feed(db: Session = Depends(get_db)):
                 },
             }
         )
-    return {"items": out}
+    return {
+        "items": out,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages,
+    }
 
 
 @router.get("/videos/{video_id}")

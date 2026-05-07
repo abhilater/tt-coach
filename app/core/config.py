@@ -40,11 +40,12 @@ class Settings(BaseSettings):
     related_total_cap: int = 200
 
     # Admission gate: minimum cosine similarity for a preferred-coach face match
-    preferred_coach_min_confidence: float = 0.55
+    preferred_coach_min_confidence: float = 0.65
 
     # Face-match hardening
     face_min_det_score: float = 0.6
     face_match_frames: int = 16
+    face_match_frame_hit_quorum: int = 2
 
 
 @lru_cache

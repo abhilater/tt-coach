@@ -81,7 +81,12 @@ def fetch_video_details(api_key: str, video_ids: list[str]) -> list[dict]:
     return out
 
 
-def channel_uploads(api_key: str, channel_external_id: str, days: int, max_results: int = 50) -> list[str]:
+def channel_uploads(
+    api_key: str,
+    channel_external_id: str,
+    days: int,
+    max_results: int = 50,
+) -> list[str]:
     yt = yt_service(api_key)
     ch_resp = yt.channels().list(part="contentDetails", id=channel_external_id).execute()
     items = ch_resp.get("items", [])
@@ -89,20 +94,30 @@ def channel_uploads(api_key: str, channel_external_id: str, days: int, max_resul
         return []
     uploads = items[0]["contentDetails"]["relatedPlaylists"]["uploads"]
     ids: list[str] = []
-    req = yt.playlistItems().list(part="contentDetails", playlistId=uploads, maxResults=min(50, max_results))
+    req = yt.playlistItems().list(
+        part="contentDetails", playlistId=uploads, maxResults=min(50, max_results)
+    )
     cutoff = datetime.now(tz=UTC) - timedelta(days=days)
     while req is not None and len(ids) < max_results:
         resp = req.execute()
+        stop_paging = False
         for it in resp.get("items", []):
+            if len(ids) >= max_results:
+                stop_paging = True
+                break
             vid = it["contentDetails"]["videoId"]
             pub = it["contentDetails"].get("videoPublishedAt")
             if pub:
                 pdt = datetime.fromisoformat(pub.replace("Z", "+00:00"))
                 if pdt < cutoff:
-                    continue
+                    # Uploads playlist is reverse-chronological; remaining items are older.
+                    stop_paging = True
+                    break
             ids.append(vid)
+        if stop_paging or len(ids) >= max_results:
+            break
         req = yt.playlistItems().list_next(req, resp)
-    return ids[:max_results]
+    return ids
 
 
 def download_thumbnail(url: str, dest: Path) -> bool:
@@ -137,7 +152,7 @@ def yt_dlp_transcript(video_url: str) -> tuple[str | None, list | None]:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if proc.returncode != 0:
             return None, None
-        meta = json.loads(proc.stdout.split("\n", 1)[0])
+        json.loads(proc.stdout.split("\n", 1)[0])
         # subtitles file paths sometimes in meta - simplified: use write-subs to tempfile
     except Exception:
         pass
@@ -387,7 +402,7 @@ def _expand_related(seed_video_ids: list[str], per_seed: int, total_cap: int) ->
     return discovered
 
 
-def run_ingestion(db: Session, days: int = 7) -> dict[str, int]:
+def run_ingestion(db: Session, days: int = 7, max_per_channel: int = 50) -> dict[str, int]:
     """Discover candidate videos under the new admission model.
 
     Sources (videos are *candidates*; admission is decided later by face match):
@@ -400,6 +415,11 @@ def run_ingestion(db: Session, days: int = 7) -> dict[str, int]:
     new candidate and flips Video.is_admitted based on preferred-coach presence.
     """
     settings = get_settings()
+    logger.info(
+        "ingestion_start days=%s max_per_channel=%s",
+        days,
+        max_per_channel,
+    )
     ingest_run_id = str(uuid.uuid4())
     counts = {
         "videos_upserted": 0,
@@ -436,11 +456,25 @@ def run_ingestion(db: Session, days: int = 7) -> dict[str, int]:
 
     seed_video_ids: set[str] = set()
     for cid in trusted_channel_ids:
-        seed_video_ids.update(channel_uploads(settings.youtube_api_key, cid, days))
+        seed_video_ids.update(
+            channel_uploads(
+                settings.youtube_api_key,
+                cid,
+                days,
+                max_results=max_per_channel,
+            )
+        )
     for cid in coach_channel_ids:
         if cid in trusted_channels:
             continue
-        seed_video_ids.update(channel_uploads(settings.youtube_api_key, cid, days))
+        seed_video_ids.update(
+            channel_uploads(
+                settings.youtube_api_key,
+                cid,
+                days,
+                max_results=max_per_channel,
+            )
+        )
 
     related_ids = _expand_related(
         list(seed_video_ids),
@@ -459,11 +493,14 @@ def run_ingestion(db: Session, days: int = 7) -> dict[str, int]:
 
     db.commit()
     logger.info(
-        "ingestion_complete run=%s upserted=%s trusted=%s coach_seeds=%s related=%s",
+        "ingestion_complete run=%s upserted=%s trusted=%s coach_seeds=%s related=%s "
+        "days=%s max_per_channel=%s",
         ingest_run_id,
         counts["videos_upserted"],
         counts["trusted_channels"],
         counts["coach_seed_channels"],
         counts["related_discovered"],
+        days,
+        max_per_channel,
     )
     return counts

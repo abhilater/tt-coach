@@ -123,14 +123,18 @@ def match_video_coaches(db: Session, video: Video, threshold: float | None = Non
     settings = get_settings()
     if threshold is None:
         threshold = settings.preferred_coach_min_confidence
+    quorum = max(1, settings.face_match_frame_hit_quorum)
+
+    db.query(VideoCoach).filter(VideoCoach.video_id == video.id).delete()
+
     frames_dir = settings.data_dir / "video_frames"
     paths = extract_frames_evenly(
         video.url, frames_dir, video.external_id, num_frames=settings.face_match_frames
     )
     from app.vision.embeddings import embedding_from_image
 
-    best_global: dict[int, float] = {}
-    evidence: dict[int, list] = {}
+    hits: dict[int, list[dict]] = {}
+    best: dict[int, float] = {}
 
     for p in paths:
         emb = embedding_from_image(p)
@@ -139,21 +143,20 @@ def match_video_coaches(db: Session, video: Video, threshold: float | None = Non
         matches = fi.search(emb, k=5)
         merged = merge_scores(matches, fi.meta, threshold=threshold)
         for cid, sc in merged.items():
-            prev = best_global.get(cid, 0.0)
-            if sc > prev:
-                best_global[cid] = sc
-                evidence[cid] = [{"frame": str(p), "score": sc}]
+            prev_best = best.get(cid, 0.0)
+            if sc > prev_best:
+                best[cid] = sc
+            hits.setdefault(cid, []).append({"frame": str(p), "score": sc})
 
-    for cid, conf in best_global.items():
-        link = (
-            db.query(VideoCoach)
-            .filter(VideoCoach.video_id == video.id, VideoCoach.coach_id == cid)
-            .first()
+    for cid, conf in best.items():
+        if len(hits.get(cid, [])) < quorum:
+            continue
+        db.add(
+            VideoCoach(
+                video_id=video.id,
+                coach_id=cid,
+                confidence=conf,
+                evidence=hits[cid],
+            )
         )
-        if link is None:
-            link = VideoCoach(video_id=video.id, coach_id=cid, confidence=conf, evidence=evidence.get(cid))
-            db.add(link)
-        else:
-            link.confidence = max(link.confidence or 0.0, conf)
-            link.evidence = evidence.get(cid)
     db.commit()

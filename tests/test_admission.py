@@ -41,7 +41,7 @@ def test_video_passes_admission_with_match(db_session: Session) -> None:
 
     pref = _resolve_preferred_coach_ids(db_session)
     assert pref == {coach.id}
-    assert _video_passes_admission(db_session, v, pref, min_confidence=0.55) is True
+    assert _video_passes_admission(db_session, v, pref, min_confidence=0.65) is True
 
 
 def test_video_rejected_below_threshold(db_session: Session) -> None:
@@ -58,7 +58,7 @@ def test_video_rejected_below_threshold(db_session: Session) -> None:
     db_session.commit()
 
     pref = _resolve_preferred_coach_ids(db_session)
-    assert _video_passes_admission(db_session, v, pref, min_confidence=0.55) is False
+    assert _video_passes_admission(db_session, v, pref, min_confidence=0.65) is False
 
 
 def test_video_rejected_when_match_is_non_preferred_coach(db_session: Session) -> None:
@@ -76,7 +76,7 @@ def test_video_rejected_when_match_is_non_preferred_coach(db_session: Session) -
     db_session.commit()
 
     pref = _resolve_preferred_coach_ids(db_session)
-    assert _video_passes_admission(db_session, v, pref, min_confidence=0.55) is False
+    assert _video_passes_admission(db_session, v, pref, min_confidence=0.65) is False
 
 
 def test_admission_disabled_when_no_preferred_coaches(db_session: Session) -> None:
@@ -92,7 +92,7 @@ def test_admission_disabled_when_no_preferred_coaches(db_session: Session) -> No
 
     pref = _resolve_preferred_coach_ids(db_session)
     assert pref == set()
-    assert _video_passes_admission(db_session, v, pref, min_confidence=0.55) is False
+    assert _video_passes_admission(db_session, v, pref, min_confidence=0.65) is False
 
 
 def test_score_filter_skips_non_admitted(db_session: Session) -> None:
