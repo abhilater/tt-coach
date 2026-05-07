@@ -7,11 +7,32 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.models import Coach, CoachSample, Video, VideoCoach
-from app.vision.embeddings import embeddings_from_paths
+from app.vision.embeddings import embeddings_with_meta
 from app.vision.frames import extract_frames_evenly
 from app.vision.index import FaceIndex, merge_scores
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_existing_sample_image(image_path: str, data_dir: Path) -> Path | None:
+    p = Path(image_path)
+    if p.is_file():
+        return p.resolve()
+    under_data = (data_dir / image_path).resolve()
+    try:
+        under_data.relative_to(data_dir.resolve())
+    except ValueError:
+        return None
+    return under_data if under_data.is_file() else None
+
+
+def _image_path_for_db(path: Path, data_dir: Path) -> str:
+    data_resolved = data_dir.resolve()
+    try:
+        rel = path.resolve().relative_to(data_resolved)
+        return str(rel).replace("\\", "/")
+    except ValueError:
+        return str(path)
 
 
 def load_or_create_index() -> FaceIndex:
@@ -37,18 +58,32 @@ def enroll_coach_samples(db: Session, coach_id: int) -> int:
 
     for samp in samples:
         paths: list[Path] = []
-        if samp.image_path and Path(samp.image_path).exists():
-            paths.append(Path(samp.image_path))
-        elif samp.source_url:
+        if samp.image_path:
+            resolved = _resolve_existing_sample_image(samp.image_path, data_dir)
+            if resolved:
+                paths.append(resolved)
+        if not paths and samp.source_url:
             paths = extract_frames_evenly(samp.source_url, frames_dir, f"cs{samp.id}", num_frames=8)
             if paths:
-                samp.image_path = str(paths[0])
+                samp.image_path = _image_path_for_db(paths[0], data_dir)
                 db.commit()
-        embs = embeddings_from_paths(paths)
-        for _i, emb in enumerate(embs):
-            fid = fi.add(emb, coach_id=coach_id, sample_id=samp.id)
-            samp.embedding_id = fid
-            added += 1
+        meta = embeddings_with_meta(paths)
+        if meta:
+            best_p, _, _ = max(meta, key=lambda t: t[2])
+            samp.image_path = _image_path_for_db(best_p, data_dir)
+            db.commit()
+            for _path, emb, _score in meta:
+                fid = fi.add(emb, coach_id=coach_id, sample_id=samp.id)
+                samp.embedding_id = fid
+                added += 1
+        elif paths:
+            samp.image_path = _image_path_for_db(paths[0], data_dir)
+            db.commit()
+            logger.warning(
+                "coach_enroll_no_faces coach_id=%s sample_id=%s",
+                coach_id,
+                samp.id,
+            )
     persist_index(fi)
     db.commit()
     logger.info("coach_enroll coach_id=%s embeddings_added=%s", coach_id, added)

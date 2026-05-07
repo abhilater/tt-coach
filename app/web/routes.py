@@ -1,15 +1,20 @@
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
+from app.core.config import get_settings
 from app.core.db import get_db
 from app.ingest.url_validate import validate_coach_sample_url
 from app.models import Coach, CoachSample, Recommendation, UserProfile, Video, VideoAnalysis
 from app.ranking.personalize import watch_next
 from app.vision.pipeline import enroll_coach_samples
+from app.web.flash import ERR, OK, redirect_with_flash
+
+logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
@@ -20,6 +25,21 @@ def media_url(rel: str | None) -> str | None:
     if not rel:
         return None
     return f"/media/{rel.lstrip('/')}"
+
+
+def coach_sample_thumb(image_path: str | None) -> str | None:
+    if not image_path:
+        return None
+    data_dir = get_settings().data_dir.resolve()
+    p = Path(image_path)
+    try:
+        if p.is_absolute():
+            rel = p.resolve().relative_to(data_dir)
+        else:
+            rel = (data_dir / p).resolve().relative_to(data_dir)
+    except ValueError:
+        return None
+    return media_url(str(rel).replace("\\", "/"))
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -61,21 +81,36 @@ def video_detail(request: Request, video_id: int, db: Session = Depends(get_db))
 
 @router.get("/coaches", response_class=HTMLResponse)
 def coaches_page(request: Request, db: Session = Depends(get_db)):
-    coaches = db.query(Coach).order_by(Coach.display_name).all()
+    coaches = db.query(Coach).options(joinedload(Coach.samples)).order_by(Coach.display_name).all()
+    coach_rows = []
+    for c in coaches:
+        samples_sorted = sorted(c.samples, key=lambda s: s.id)
+        sample_rows = [
+            {"url": s.source_url or "", "thumb": coach_sample_thumb(s.image_path)}
+            for s in samples_sorted
+        ]
+        best_thumb = None
+        for s in samples_sorted:
+            t = coach_sample_thumb(s.image_path)
+            if t:
+                best_thumb = t
+                break
+        coach_rows.append({"coach": c, "best_thumb": best_thumb, "samples": sample_rows})
     return templates.TemplateResponse(
         request=request,
         name="coaches.html",
-        context={"coaches": coaches},
+        context={"coach_rows": coach_rows},
     )
 
 
 @router.post("/coaches")
 def coaches_create(display_name: str = Form(...), db: Session = Depends(get_db)):
-    c = Coach(display_name=display_name.strip())
+    name = display_name.strip()
+    c = Coach(display_name=name)
     db.add(c)
     db.commit()
     db.refresh(c)
-    return RedirectResponse("/coaches", status_code=303)
+    return redirect_with_flash("/coaches", OK, f"Coach '{name}' added.")
 
 
 @router.post("/coaches/{coach_id}/samples")
@@ -86,12 +121,28 @@ def coach_add_sample(
 ):
     url = source_url.strip()
     if not validate_coach_sample_url(url):
-        return HTMLResponse("Invalid YouTube URL", status_code=400)
+        return redirect_with_flash("/coaches", ERR, "Invalid YouTube URL.")
     s = CoachSample(coach_id=coach_id, source_url=url)
     db.add(s)
     db.commit()
-    enroll_coach_samples(db, coach_id)
-    return RedirectResponse("/coaches", status_code=303)
+    try:
+        n = enroll_coach_samples(db, coach_id)
+    except Exception as e:
+        logger.warning(
+            "coach_enroll_failed coach_id=%s err=%s",
+            coach_id,
+            type(e).__name__,
+        )
+        return redirect_with_flash(
+            "/coaches",
+            ERR,
+            f"Sample saved but face extraction failed: {type(e).__name__}.",
+        )
+    return redirect_with_flash(
+        "/coaches",
+        OK,
+        f"Sample added; {n} face embedding(s) extracted.",
+    )
 
 
 @router.get("/profile", response_class=HTMLResponse)
@@ -116,7 +167,7 @@ def profile_post(
 ):
     p = db.query(UserProfile).filter(UserProfile.id == 1).first()
     if not p:
-        return RedirectResponse("/profile", status_code=303)
+        return redirect_with_flash("/profile", ERR, "Profile not found.")
     p.level = level or None
     p.play_style = play_style or None
     p.weaknesses = [x.strip() for x in weaknesses.split(",") if x.strip()]
@@ -131,7 +182,7 @@ def profile_post(
             pref_ids.append(token)
     p.preferred_coaches = pref_ids
     db.commit()
-    return RedirectResponse("/profile", status_code=303)
+    return redirect_with_flash("/profile", OK, "Profile saved.")
 
 
 @router.post("/admin/run-pipeline")
@@ -142,5 +193,9 @@ def admin_run_pipeline():
     from app.scheduler.jobs import daily_refresh_job
 
     SessionLocal = sessionmaker(bind=get_engine())
-    daily_refresh_job(SessionLocal)
-    return RedirectResponse("/feed", status_code=303)
+    try:
+        daily_refresh_job(SessionLocal)
+    except Exception as e:
+        logger.warning("admin_run_pipeline_failed err=%s", type(e).__name__)
+        return redirect_with_flash("/feed", ERR, f"Pipeline failed: {type(e).__name__}.")
+    return redirect_with_flash("/feed", OK, "Pipeline finished.")

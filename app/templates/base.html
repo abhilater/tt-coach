@@ -16,8 +16,32 @@
       <button type="submit" class="text-xs bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded">Run pipeline</button>
     </form>
   </nav>
+  {% set flash_kind = request.query_params.get("flash") %}
+  {% set flash_msg = request.query_params.get("msg") %}
   <main class="max-w-4xl mx-auto px-4 py-8">
+    {% if flash_kind and flash_msg %}
+    <div
+      role="alert"
+      class="mb-6 rounded-lg border px-4 py-3 text-sm
+        {% if flash_kind == 'success' %}
+        border-emerald-800 bg-emerald-950/60 text-emerald-200
+        {% else %}
+        border-red-800 bg-red-950/60 text-red-200
+        {% endif %}">
+      {{ flash_msg }}
+    </div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    (function () {
+      var u = new URL(window.location.href);
+      if (!u.searchParams.has("flash")) return;
+      u.searchParams.delete("flash");
+      u.searchParams.delete("msg");
+      var q = u.searchParams.toString();
+      window.history.replaceState({}, "", u.pathname + (q ? "?" + q : "") + u.hash);
+    })();
+  </script>
 </body>
 </html>

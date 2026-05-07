@@ -40,3 +40,19 @@ def embeddings_from_paths(paths: list[Path]) -> list[np.ndarray]:
         if e is not None:
             out.append(e)
     return out
+
+
+def embeddings_with_meta(paths: list[Path]) -> list[tuple[Path, np.ndarray, float]]:
+    import cv2
+
+    out: list[tuple[Path, np.ndarray, float]] = []
+    for p in paths:
+        img = cv2.imread(str(p))
+        if img is None:
+            continue
+        faces = get_face_app().get(img)
+        if not faces:
+            continue
+        f = max(faces, key=lambda x: float(getattr(x, "det_score", 0.0)))
+        out.append((p, f.normed_embedding.astype("float32"), float(getattr(f, "det_score", 0.0))))
+    return out
