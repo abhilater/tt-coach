@@ -4,7 +4,7 @@ Modular monolith: FastAPI + HTMX + SQLite. Discovers YouTube coaching videos, ad
 
 ## Discovery & admission model
 
-A video reaches the feed if and only if a preferred coach (one you've enrolled with face samples on `/coaches`) is detected by face similarity at or above `PREFERRED_COACH_MIN_CONFIDENCE` (default 0.65) on at least `FACE_MATCH_FRAME_HIT_QUORUM` sampled frames (default 2).
+A video reaches the feed if and only if a preferred coach (one you've enrolled with face samples on `/coaches`) is detected by face similarity at or above `PREFERRED_COACH_MIN_CONFIDENCE` (default 0.55) on at least `FACE_MATCH_FRAME_HIT_QUORUM` sampled frames (default 1). Raise both in `.env` if you need stricter precision and have good enrollment samples.
 
 Discovery surfaces (each one is just a candidate pool — admission still requires a face match):
 
@@ -105,7 +105,7 @@ Open http://127.0.0.1:8000
 APScheduler runs a daily job at `SCHEDULER_REFRESH_HOUR`/`SCHEDULER_REFRESH_MINUTE` in **UTC** (default 06:00 UTC). Order of operations within a single run:
 
 1. **Discover** candidate videos from seed channels + preferred-coach sample channels + 1-hop related-video expansion.
-2. **Face match** every un-admitted candidate (cheap: 16 frames + FAISS). Flip `Video.is_admitted` based on whether any preferred coach matches at `PREFERRED_COACH_MIN_CONFIDENCE` on at least `FACE_MATCH_FRAME_HIT_QUORUM` frames.
+2. **Face match** every un-admitted candidate (cheap: 16 frames + FAISS). Flip `Video.is_admitted` based on whether any preferred coach matches at `PREFERRED_COACH_MIN_CONFIDENCE` on at least `FACE_MATCH_FRAME_HIT_QUORUM` frames (configurable).
 3. **Analyze** only admitted videos (transcribe + LLM). Skipped candidates never incur LLM/Whisper cost.
 4. **Rank** with `compute_personalized_scores` and rebuild `Recommendation` rows for the day.
 

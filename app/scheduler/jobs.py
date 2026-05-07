@@ -64,13 +64,18 @@ def _video_passes_admission(
     return link is not None
 
 
-def gate_admission(db: Session) -> dict[str, int]:
+def gate_admission(db: Session, max_videos: int | None = None) -> dict[str, int]:
     """Run face matching on every un-evaluated video and flip is_admitted.
 
     A video is admitted iff it has a VideoCoach row whose coach_id is in the
     user's preferred_coaches and whose confidence meets the configured
     threshold. Runs face matching first (cheap) before any LLM/transcribe step
     so we don't pay for analysis on rejected candidates.
+
+    max_videos: per-run cap on videos to evaluate. None (default) preserves the
+    historical scheduler cap of ``settings.max_pipeline_videos * 4`` so daily
+    cron runs stay bounded. Pass 0 (or negative) to disable the cap entirely
+    — intended for backfill/CLI callers that need to drain the queue in one go.
     """
     settings = get_settings()
     counts = {"matched": 0, "admitted": 0, "rejected": 0, "skipped": 0}
@@ -82,13 +87,15 @@ def gate_admission(db: Session) -> dict[str, int]:
             "set preferred coaches in /profile to enable the feed",
         )
 
-    pending = (
+    q = (
         db.query(Video)
         .filter(Video.is_admitted.is_(False))
         .order_by(Video.published_at.desc().nullslast(), Video.id.desc())
-        .limit(settings.max_pipeline_videos * 4)
-        .all()
     )
+    cap = settings.max_pipeline_videos * 4 if max_videos is None else max_videos
+    if cap > 0:
+        q = q.limit(cap)
+    pending = q.all()
 
     for v in pending:
         try:

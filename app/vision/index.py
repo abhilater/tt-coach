@@ -52,7 +52,7 @@ class FaceIndex:
         return fi
 
 
-def merge_scores(matches: list[tuple[int, float]], meta: list[dict], threshold: float = 0.65) -> dict[int, float]:
+def merge_scores(matches: list[tuple[int, float]], meta: list[dict], threshold: float = 0.55) -> dict[int, float]:
     """Map coach_id -> max similarity."""
     best: dict[int, float] = {}
     for idx, sim in matches:

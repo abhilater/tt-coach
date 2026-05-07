@@ -39,13 +39,15 @@ class Settings(BaseSettings):
     related_per_seed: int = 8
     related_total_cap: int = 200
 
-    # Admission gate: minimum cosine similarity for a preferred-coach face match
-    preferred_coach_min_confidence: float = 0.65
+    # Admission gate: minimum cosine similarity (InsightFace buffalo_s IP). Logs showed
+    # 0.65 filtered every top‑k neighbor on real TT footage (coach_hit_counts always empty).
+    preferred_coach_min_confidence: float = 0.55
 
     # Face-match hardening
     face_min_det_score: float = 0.6
     face_match_frames: int = 16
-    face_match_frame_hit_quorum: int = 2
+    # Raised via env if false positives return; quorum=2 with 0.65 eliminated all admits.
+    face_match_frame_hit_quorum: int = 1
 
 
 @lru_cache
