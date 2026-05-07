@@ -13,3 +13,14 @@ def validate_coach_sample_url(url: str) -> bool:
     if not u.startswith(("http://", "https://")):
         return False
     return extract_youtube_video_id(u) is not None
+
+
+def coach_sample_url_dedupe_key(url: str | None, sample_id: int) -> str:
+    """Stable key for deduplicating sample rows (same YouTube video = one link)."""
+    u = (url or "").strip()
+    if not u:
+        return f"__empty_{sample_id}"
+    vid = extract_youtube_video_id(u)
+    if vid:
+        return vid
+    return f"raw:{u.lower()}"

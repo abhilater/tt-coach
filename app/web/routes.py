@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
 from app.core.db import get_db
-from app.ingest.url_validate import validate_coach_sample_url
+from app.ingest.url_validate import coach_sample_url_dedupe_key, validate_coach_sample_url
 from app.models import Coach, CoachSample, Recommendation, UserProfile, Video, VideoAnalysis
 from app.ranking.personalize import watch_next
 from app.vision.pipeline import enroll_coach_samples
@@ -93,10 +93,16 @@ def coaches_page(request: Request, db: Session = Depends(get_db)):
     coach_rows = []
     for c in coaches:
         samples_sorted = sorted(c.samples, key=lambda s: s.id)
-        sample_rows = [
-            {"url": s.source_url or "", "thumb": coach_sample_thumb(s.image_path)}
-            for s in samples_sorted
-        ]
+        seen_keys: set[str] = set()
+        sample_rows: list[dict] = []
+        for s in samples_sorted:
+            key = coach_sample_url_dedupe_key(s.source_url, s.id)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            sample_rows.append(
+                {"url": s.source_url or "", "thumb": coach_sample_thumb(s.image_path)}
+            )
         best_thumb = None
         for s in samples_sorted:
             t = coach_sample_thumb(s.image_path)
@@ -130,6 +136,14 @@ def coach_add_sample(
     url = source_url.strip()
     if not validate_coach_sample_url(url):
         return redirect_with_flash("/coaches", ERR, "Invalid YouTube URL.")
+    existing = db.query(CoachSample).filter(CoachSample.coach_id == coach_id).all()
+    new_key = coach_sample_url_dedupe_key(url, 0)
+    if any(coach_sample_url_dedupe_key(s.source_url, s.id) == new_key for s in existing):
+        return redirect_with_flash(
+            "/coaches",
+            OK,
+            "That YouTube video is already listed for this coach.",
+        )
     s = CoachSample(coach_id=coach_id, source_url=url)
     db.add(s)
     db.commit()
