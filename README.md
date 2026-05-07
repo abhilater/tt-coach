@@ -7,7 +7,22 @@ Modular monolith: FastAPI + HTMX + SQLite. Ingests YouTube coaching videos, tran
 - Python 3.11+
 - `ffmpeg` on PATH (for frames/audio)
 - `yt-dlp` (PyPI dependency; requires network when fetching audio/transcripts)
-- Optional: Ollama with `qwen2.5:7b` (or similar)
+- **Local LLM:** Ollama — recommended for reliable local dev (avoids Gemini free-tier quota).
+
+### Local LLM (Ollama on macOS)
+
+1. Download and install from the official macOS disk image: https://ollama.com/download/mac (`Ollama.dmg`). Drag `Ollama.app` into `/Applications`, open it once (menu bar icon = server on `http://127.0.0.1:11434`). If `ollama` is not on `PATH`, restart the shell or run `open -a Ollama`.
+2. Pull and warm the model (default in `.env.example`; good fit for ~18GB RAM MacBooks):
+   ```bash
+   ollama pull qwen2.5:7b-instruct
+   printf 'ok\n' | ollama run qwen2.5:7b-instruct
+   ```
+3. Quick check:
+   ```bash
+   curl -fsS http://127.0.0.1:11434/api/version
+   ```
+
+For local-only routing, keep `LLM_SUMMARY`, `LLM_INSIGHTS`, and `LLM_TAGGING` set to `ollama` in `.env`, and leave `GEMINI_API_KEY` empty so the app does not silently fall through to Gemini when quotas are exhausted. Tune `OLLAMA_BASE_URL`, `OLLAMA_MODEL`, and the HTTP timeout in `app/llm/ollama.py` if needed.
 
 ### Package manager: `uv` (optional)
 
@@ -48,7 +63,7 @@ python -m app.ingest.cli --help
 ```bash
 cd tt-coach
 cp .env.example .env
-# Add YOUTUBE_API_KEY and/or GEMINI_API_KEY as needed
+# Add YOUTUBE_API_KEY when using YouTube discovery; for local LLM-only dev keep GEMINI_API_KEY empty
 uv sync
 mkdir -p data
 uv run alembic upgrade head

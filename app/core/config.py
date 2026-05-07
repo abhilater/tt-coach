@@ -20,12 +20,12 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
 
-    llm_summary: str = "gemini"
+    llm_summary: str = "ollama"
     llm_insights: str = "ollama"
     llm_tagging: str = "ollama"
 
     ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_model: str = "qwen2.5:7b"
+    ollama_model: str = "qwen2.5:7b-instruct"
 
     gemini_api_key: str = ""
     openai_api_key: str = ""
