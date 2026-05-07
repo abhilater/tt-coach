@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{% block title %}TT Coach{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen">
+  <nav class="border-b border-slate-800 px-4 py-3 flex gap-4 items-center">
+    <a href="/feed" class="font-semibold text-emerald-400">Feed</a>
+    <a href="/coaches" class="text-slate-300 hover:text-white">Coaches</a>
+    <a href="/profile" class="text-slate-300 hover:text-white">Profile</a>
+    <form action="/admin/run-pipeline" method="post" class="ml-auto">
+      <button type="submit" class="text-xs bg-emerald-700 hover:bg-emerald-600 px-3 py-1 rounded">Run pipeline</button>
+    </form>
+  </nav>
+  <main class="max-w-4xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

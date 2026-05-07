@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Profile — TT Coach{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Your profile</h1>
+
+<form action="/profile" method="post" class="space-y-4 max-w-lg">
+  <div>
+    <label class="block text-sm text-slate-400 mb-1">Level</label>
+    <input name="level" value="{{ profile.level or '' }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"/>
+  </div>
+  <div>
+    <label class="block text-sm text-slate-400 mb-1">Play style</label>
+    <input name="play_style" value="{{ profile.play_style or '' }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"/>
+  </div>
+  <div>
+    <label class="block text-sm text-slate-400 mb-1">Weaknesses (comma-separated; match skill_tags topics)</label>
+    <input name="weaknesses" value="{{ (profile.weaknesses or [])|join(', ') }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"/>
+  </div>
+  <div>
+    <label class="block text-sm text-slate-400 mb-1">Goals (comma-separated)</label>
+    <input name="goals" value="{{ (profile.goals or [])|join(', ') }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"/>
+  </div>
+  <div>
+    <label class="block text-sm text-slate-400 mb-1">Preferred languages (comma, e.g. en, hi)</label>
+    <input name="langs" value="{{ (profile.preferred_languages or ['en'])|join(', ') }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"/>
+  </div>
+  <div>
+    <label class="block text-sm text-slate-400 mb-1">Preferred coaches (IDs or names, comma-separated)</label>
+    <input name="preferred_coaches" value="{{ (profile.preferred_coaches or [])|join(', ') }}" class="w-full bg-slate-900 border border-slate-700 rounded px-3 py-2"/>
+  </div>
+  <button type="submit" class="bg-emerald-700 hover:bg-emerald-600 px-6 py-2 rounded">Save</button>
+</form>
+{% endblock %}

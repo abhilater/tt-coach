@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Daily feed — TT Coach{% endblock %}
+{% block content %}
+<h1 class="text-2xl font-bold mb-6">Daily intelligence feed</h1>
+{% if not items %}
+<p class="text-slate-400 mb-4">No recommendations yet. Add a YouTube API key and seed files, then click <strong>Run pipeline</strong>.</p>
+{% endif %}
+<ul class="space-y-4">
+  {% for row in items %}
+  <li class="border border-slate-800 rounded-lg p-4 flex gap-4 bg-slate-900/50">
+    {% if row.thumb %}
+    <img src="{{ row.thumb }}" alt="" class="w-40 h-24 object-cover rounded shrink-0"/>
+    {% endif %}
+    <div class="flex-1 min-w-0">
+      <a href="/videos/{{ row.video.id }}" class="text-lg font-medium text-emerald-400 hover:underline line-clamp-2">{{ row.video.title }}</a>
+      <p class="text-xs text-slate-500 mt-1">score {{ row.rec.score|round(2) }} · {{ (row.rec.reasons or [])|join(', ') }}</p>
+      <a href="{{ row.video.url }}" target="_blank" rel="noopener" class="text-xs text-slate-400 hover:text-white mt-2 inline-block">Open on YouTube</a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% endblock %}

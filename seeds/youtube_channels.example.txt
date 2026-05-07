@@ -1,0 +1,2 @@
+# One channel ID per line (YouTube channel ID starting with UC)
+# UCxxxxxxxxxxxxxxxxxxxxxxxxxx

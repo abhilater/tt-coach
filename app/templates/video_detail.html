@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}{{ video.title[:60] }}{% if video.title|length > 60 %}…{% endif %}{% endblock %}
+{% block content %}
+<a href="/feed" class="text-sm text-slate-400 hover:text-white mb-4 inline-block">&larr; Feed</a>
+<div class="flex gap-6 flex-col md:flex-row">
+  {% if thumb %}
+  <img src="{{ thumb }}" alt="" class="w-full md:w-80 rounded-lg object-cover"/>
+  {% endif %}
+  <div class="flex-1">
+    <h1 class="text-2xl font-bold">{{ video.title }}</h1>
+    <p class="text-sm text-slate-500 mt-2">Topics: {{ (video.topics or [])|join(', ') }}</p>
+    <a href="{{ video.url }}" target="_blank" rel="noopener" class="mt-4 inline-block bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded text-sm">Watch</a>
+  </div>
+</div>
+
+{% if analysis %}
+<section class="mt-10 space-y-6">
+  <div>
+    <h2 class="text-lg font-semibold text-emerald-400">Summary</h2>
+    <p class="text-slate-300 mt-2 whitespace-pre-wrap">{{ analysis.summary }}</p>
+  </div>
+  {% if analysis.try_next_session %}
+  <div class="border border-emerald-900 bg-emerald-950/40 rounded-lg p-4">
+    <h2 class="text-lg font-semibold text-emerald-300">Try this in your next session</h2>
+    <p class="mt-2">{{ analysis.try_next_session }}</p>
+  </div>
+  {% endif %}
+  {% if analysis.drills %}
+  <div>
+    <h2 class="text-lg font-semibold text-emerald-400">Drills</h2>
+    <ul class="mt-2 space-y-3">
+      {% for d in analysis.drills %}
+      <li class="border border-slate-800 rounded p-3 bg-slate-900/40">
+        <p class="font-medium">{{ d.name }}</p>
+        <ol class="list-decimal ml-5 mt-2 text-slate-300 text-sm">
+          {% for step in d.steps %}
+          <li>{{ step }}</li>
+          {% endfor %}
+        </ol>
+        {% if d.reps_or_duration %}<p class="text-xs text-slate-500 mt-2">{{ d.reps_or_duration }}</p>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if analysis.tips %}
+  <div>
+    <h2 class="text-lg font-semibold text-emerald-400">Coaching tips</h2>
+    <ul class="list-disc ml-6 mt-2 text-slate-300">
+      {% for t in analysis.tips %}<li>{{ t }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if analysis.mistakes %}
+  <div>
+    <h2 class="text-lg font-semibold text-emerald-400">Key mistakes addressed</h2>
+    <ul class="list-disc ml-6 mt-2 text-slate-300">
+      {% for m in analysis.mistakes %}<li>{{ m }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  {% if analysis.chapters %}
+  <div>
+    <h2 class="text-lg font-semibold text-emerald-400">Chapters</h2>
+    <ul class="mt-2 text-slate-300 text-sm space-y-1">
+      {% for c in analysis.chapters %}
+      <li>{{ c.title }}{% if c.start_hint %} — {{ c.start_hint }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+</section>
+{% else %}
+<p class="mt-8 text-slate-500">No AI analysis yet — run the pipeline after ingestion.</p>
+{% endif %}
+
+{% if next_videos %}
+<section class="mt-12">
+  <h2 class="text-lg font-semibold mb-4">Videos you should watch next</h2>
+  <ul class="space-y-2">
+    {% for nv in next_videos %}
+    <li><a href="/videos/{{ nv.id }}" class="text-emerald-400 hover:underline">{{ nv.title }}</a></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
