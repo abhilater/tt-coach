@@ -87,6 +87,7 @@ class Video(Base):
     thumbnail_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     channel_id: Mapped[int | None] = mapped_column(ForeignKey("channel.id"), nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    view_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_s: Mapped[int | None] = mapped_column(Integer, nullable=True)
     language: Mapped[str | None] = mapped_column(String(16), nullable=True)
     skill_level: Mapped[str | None] = mapped_column(String(64), nullable=True)

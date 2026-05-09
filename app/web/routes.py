@@ -20,6 +20,33 @@ logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent.parent / "templates"))
 
+
+def humanize_views(n: int | None) -> str:
+    if n is None:
+        return ""
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M views"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}K views"
+    return f"{n} views"
+
+
+def format_date(dt) -> str:
+    if not dt:
+        return ""
+    from datetime import datetime
+
+    if isinstance(dt, str):
+        try:
+            dt = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except ValueError:
+            return dt
+    return dt.strftime("%b %d, %Y")
+
+
+templates.env.filters["humanize_views"] = humanize_views
+templates.env.filters["format_date"] = format_date
+
 router = APIRouter(tags=["web"])
 
 
@@ -62,7 +89,7 @@ def feed(
     request: Request,
     db: Session = Depends(get_db),
     page: int = Query(1),
-    per_page: int = Query(20),
+    per_page: int = Query(50),
 ):
     page = max(1, page)
     per_page = max(1, min(50, per_page))

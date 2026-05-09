@@ -76,7 +76,7 @@ def fetch_video_details(api_key: str, video_ids: list[str]) -> list[dict]:
     # chunks of 50
     for i in range(0, len(video_ids), 50):
         chunk = video_ids[i : i + 50]
-        resp = yt.videos().list(part="snippet,contentDetails", id=",".join(chunk)).execute()
+        resp = yt.videos().list(part="snippet,contentDetails,statistics", id=",".join(chunk)).execute()
         out.extend(resp.get("items", []))
     return out
 
@@ -194,6 +194,7 @@ def upsert_video_from_api_item(
     vid = item["id"]
     snip = item["snippet"]
     details_cd = item.get("contentDetails", {})
+    stats = item.get("statistics", {})
     channel_ext = snip["channelId"]
     title = snip["title"]
     description = snip.get("description") or ""
@@ -207,6 +208,9 @@ def upsert_video_from_api_item(
 
     duration_iso = details_cd.get("duration", "")
     duration_s = _parse_iso_duration(duration_iso)
+
+    v_count = stats.get("viewCount")
+    view_count = int(v_count) if v_count else None
 
     ch = upsert_channel(db, channel_ext, title=snip.get("channelTitle"))
 
@@ -227,6 +231,7 @@ def upsert_video_from_api_item(
         existing.title = title
         existing.description = description
         existing.duration_s = duration_s
+        existing.view_count = view_count
         existing.topics = topics
         existing.ingest_run_id = ingest_run_id
         if thumb_path_str:
@@ -244,6 +249,7 @@ def upsert_video_from_api_item(
         thumbnail_path=thumb_path_str,
         channel_id=ch.id,
         published_at=pub_dt,
+        view_count=view_count,
         duration_s=duration_s,
         topics=topics,
         ingest_run_id=ingest_run_id,

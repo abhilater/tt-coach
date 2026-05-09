@@ -21,7 +21,7 @@ def health():
 def api_feed(
     db: Session = Depends(get_db),
     page: int = Query(1),
-    per_page: int = Query(20),
+    per_page: int = Query(50),
 ):
     page = max(1, page)
     per_page = max(1, min(50, per_page))

@@ -7,14 +7,41 @@
 {% endif %}
 <ul class="space-y-4">
   {% for row in items %}
-  <li class="border border-slate-800 rounded-lg p-4 flex gap-4 bg-slate-900/50">
+  <li class="group border border-slate-800 rounded-xl p-5 flex gap-5 bg-slate-900/40 hover:bg-slate-900/60 transition-colors duration-300 backdrop-blur-sm">
     {% if row.thumb %}
-    <img src="{{ row.thumb }}" alt="" class="w-40 h-24 object-cover rounded shrink-0"/>
+    <a href="{{ row.video.url }}" target="_blank" rel="noopener" class="relative shrink-0 w-48 h-28 overflow-hidden rounded-lg shadow-2xl">
+      <img src="{{ row.thumb }}" alt="" class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"/>
+      <div class="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center">
+        <svg class="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0-3.897.266-4.356 2.62-4.385 8.816.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0 3.897-.266 4.356-2.62 4.385-8.816-.029-6.185-.484-8.549-4.385-8.816zm-10.615 12.816v-8l8 3.993-8 4.007z"/>
+        </svg>
+      </div>
+    </a>
     {% endif %}
-    <div class="flex-1 min-w-0">
-      <a href="/videos/{{ row.video.id }}" class="text-lg font-medium text-emerald-400 hover:underline line-clamp-2">{{ row.video.title }}</a>
-      <p class="text-xs text-slate-500 mt-1">score {{ row.rec.score|round(2) }} · {{ (row.rec.reasons or [])|join(', ') }}</p>
-      <a href="{{ row.video.url }}" target="_blank" rel="noopener" class="text-xs text-slate-400 hover:text-white mt-2 inline-block">Open on YouTube</a>
+    <div class="flex-1 min-w-0 flex flex-col justify-between py-1">
+      <div>
+        <a href="/videos/{{ row.video.id }}" class="text-xl font-semibold text-emerald-400 hover:text-emerald-300 transition-colors line-clamp-2 leading-tight">{{ row.video.title }}</a>
+        <p class="text-sm text-slate-500 mt-2 flex items-center gap-2">
+          <span class="inline-block w-2 h-2 rounded-full bg-emerald-500/50"></span>
+          score {{ row.rec.score|round(2) }} · {{ (row.rec.reasons or [])|join(', ') }}
+        </p>
+      </div>
+      
+      <div class="mt-4 flex items-center gap-4 text-xs font-medium text-slate-400">
+        {% if row.video.view_count %}
+        <span class="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-md border border-slate-700/50">
+          <svg class="w-3.5 h-3.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+          {{ row.video.view_count|humanize_views }}
+        </span>
+        {% endif %}
+        
+        {% if row.video.published_at %}
+        <span class="flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          {{ row.video.published_at|format_date }}
+        </span>
+        {% endif %}
+      </div>
     </div>
   </li>
   {% endfor %}

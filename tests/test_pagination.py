@@ -67,6 +67,10 @@ def test_feed_pagination_slices_scores():
     db.close()
 
     with TestClient(app) as client:
+        r_default = client.get("/feed?page=1")
+        assert r_default.status_code == 200
+        assert r_default.text.count('href="/videos/') == 50
+
         r1 = client.get("/feed?page=1&per_page=20")
         assert r1.status_code == 200
         assert r1.text.count('href="/videos/') == 20
@@ -110,6 +114,10 @@ def test_api_feed_clamps_per_page_and_page():
     db.close()
 
     with TestClient(app) as client:
+        r_default = client.get("/api/feed")
+        assert r_default.status_code == 200
+        assert r_default.json()["per_page"] == 50
+
         r_big = client.get("/api/feed?per_page=999")
         assert r_big.status_code == 200
         data = r_big.json()
