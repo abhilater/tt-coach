@@ -89,10 +89,10 @@ def feed(
     request: Request,
     db: Session = Depends(get_db),
     page: int = Query(1),
-    per_page: int = Query(50),
+    per_page: int = Query(30),
 ):
     page = max(1, page)
-    per_page = max(1, min(50, per_page))
+    per_page = max(1, min(30, per_page))
     total = db.query(func.count(Recommendation.id)).scalar() or 0
     total_pages = max(1, math.ceil(total / per_page)) if total else 1
     if page > total_pages and total > 0:
