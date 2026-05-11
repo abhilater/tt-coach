@@ -9,7 +9,12 @@
   <div class="flex-1">
     <h1 class="text-2xl font-bold">{{ video.title }}</h1>
     <p class="text-sm text-slate-500 mt-2">Topics: {{ (video.topics or [])|join(', ') }}</p>
-    <a href="{{ video.url }}" target="_blank" rel="noopener" class="mt-4 inline-block bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded text-sm">Watch</a>
+    <div class="mt-4 flex flex-wrap gap-3 items-center">
+      <a href="{{ video.url }}" target="_blank" rel="noopener" class="inline-block bg-emerald-700 hover:bg-emerald-600 px-4 py-2 rounded text-sm">Watch</a>
+      <form action="/videos/{{ video.id }}/generate-insights" method="post" class="inline">
+        <button type="submit" class="bg-emerald-800 hover:bg-emerald-700 px-4 py-2 rounded text-sm border border-emerald-700">Generate insights</button>
+      </form>
+    </div>
   </div>
 </div>
 
@@ -71,7 +76,7 @@
   {% endif %}
 </section>
 {% else %}
-<p class="mt-8 text-slate-500">No AI analysis yet — run the pipeline after ingestion.</p>
+<p class="mt-8 text-slate-500">No AI analysis yet — use <strong>Generate insights</strong> above or run the full pipeline from the nav bar after ingestion.</p>
 {% endif %}
 
 {% if next_videos %}

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import math
 from pathlib import Path
@@ -7,8 +8,9 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session, joinedload
 
+from app.analysis.video_insights import analyze_video
 from app.core.config import get_settings
-from app.core.db import get_db
+from app.core.db import get_db, get_engine
 from app.ingest.url_validate import coach_sample_url_dedupe_key, validate_coach_sample_url
 from app.models import Coach, CoachSample, UserProfile, Video, VideoAnalysis
 from app.ranking.feed_query import FeedSort, apply_feed_sort, feed_recommendations_query
@@ -264,12 +266,45 @@ def profile_post(
     return redirect_with_flash("/profile", OK, "Profile saved.")
 
 
+@router.post("/videos/{video_id}/generate-insights")
+def video_generate_insights(video_id: int):
+    from sqlalchemy.orm import sessionmaker
+
+    SessionLocal = sessionmaker(bind=get_engine())
+    db = SessionLocal()
+    try:
+        v = db.query(Video).filter(Video.id == video_id).first()
+        if not v:
+            return HTMLResponse("Not found", status_code=404)
+        try:
+            asyncio.run(analyze_video(db, v))
+        except Exception as e:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            logger.warning(
+                "video_generate_insights_failed vid=%s err=%s",
+                video_id,
+                type(e).__name__,
+            )
+            return redirect_with_flash(
+                f"/videos/{video_id}",
+                ERR,
+                f"Insight generation failed: {type(e).__name__}.",
+            )
+        return redirect_with_flash(f"/videos/{video_id}", OK, "Insights generated.")
+    finally:
+        db.close()
+
+
 @router.post("/admin/run-pipeline")
 def admin_run_pipeline():
     from sqlalchemy.orm import sessionmaker
 
-    from app.core.db import get_engine
     from app.scheduler.jobs import daily_refresh_job
+
+    SessionLocal = sessionmaker(bind=get_engine())
 
     SessionLocal = sessionmaker(bind=get_engine())
     try:
