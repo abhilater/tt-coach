@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
-from app.models import Recommendation, Video, VideoAnalysis
-from app.ranking.feed_query import feed_recommendations_query
+from app.models import Video, VideoAnalysis
+from app.ranking.feed_query import FeedSort, apply_feed_sort, feed_recommendations_query
 
 router = APIRouter(tags=["api"])
 
@@ -22,6 +22,7 @@ def api_feed(
     db: Session = Depends(get_db),
     page: int = Query(1),
     per_page: int = Query(30),
+    sort: FeedSort = Query("recency"),
 ):
     page = max(1, page)
     per_page = max(1, min(30, per_page))
@@ -32,7 +33,7 @@ def api_feed(
         page = total_pages
     offset = (page - 1) * per_page
     recs = (
-        base.order_by(Recommendation.score.desc())
+        apply_feed_sort(base, sort)
         .offset(offset)
         .limit(per_page)
         .all()
@@ -56,6 +57,7 @@ def api_feed(
         "items": out,
         "page": page,
         "per_page": per_page,
+        "sort": sort,
         "total": total,
         "total_pages": total_pages,
     }

@@ -2,6 +2,18 @@
 {% block title %}Daily feed — TT Coach{% endblock %}
 {% block content %}
 <h1 class="text-2xl font-bold mb-6">Daily intelligence feed</h1>
+<form method="get" action="/feed" class="mb-5 flex items-center gap-3">
+  <input type="hidden" name="per_page" value="{{ per_page }}" />
+  <label for="sort" class="text-sm text-slate-400">Sort by</label>
+  <select id="sort" name="sort" onchange="this.form.submit()" class="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+    <option value="recency" {% if sort == "recency" %}selected{% endif %}>YouTube upload timestamp (Recency)</option>
+    <option value="views" {% if sort == "views" %}selected{% endif %}>Views count</option>
+    <option value="coach_id" {% if sort == "coach_id" %}selected{% endif %}>Coach ID</option>
+  </select>
+  <noscript>
+    <button type="submit" class="px-3 py-2 rounded border border-slate-700 hover:bg-slate-800 text-slate-300 text-sm">Apply</button>
+  </noscript>
+</form>
 {% if not items %}
 <p class="text-slate-400 mb-4">No recommendations yet. Add a YouTube API key and seed files, then click <strong>Run pipeline</strong>.</p>
 {% endif %}
@@ -52,12 +64,12 @@
   <p class="text-slate-500">{{ total }} video{{ 's' if total != 1 else '' }} · page {{ page }} / {{ total_pages }}</p>
   <div class="flex gap-2">
     {% if has_prev %}
-    <a href="/feed?page={{ page - 1 }}&per_page={{ per_page }}" class="px-3 py-1 rounded border border-slate-700 hover:bg-slate-800 text-slate-300">Previous</a>
+    <a href="/feed?page={{ page - 1 }}&per_page={{ per_page }}&sort={{ sort }}" class="px-3 py-1 rounded border border-slate-700 hover:bg-slate-800 text-slate-300">Previous</a>
     {% else %}
     <span class="px-3 py-1 rounded border border-slate-800 text-slate-600 cursor-not-allowed">Previous</span>
     {% endif %}
     {% if has_next %}
-    <a href="/feed?page={{ page + 1 }}&per_page={{ per_page }}" class="px-3 py-1 rounded border border-slate-700 hover:bg-slate-800 text-slate-300">Next</a>
+    <a href="/feed?page={{ page + 1 }}&per_page={{ per_page }}&sort={{ sort }}" class="px-3 py-1 rounded border border-slate-700 hover:bg-slate-800 text-slate-300">Next</a>
     {% else %}
     <span class="px-3 py-1 rounded border border-slate-800 text-slate-600 cursor-not-allowed">Next</span>
     {% endif %}

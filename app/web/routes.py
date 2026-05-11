@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.ingest.url_validate import coach_sample_url_dedupe_key, validate_coach_sample_url
-from app.models import Coach, CoachSample, Recommendation, UserProfile, Video, VideoAnalysis
-from app.ranking.feed_query import feed_recommendations_query
+from app.models import Coach, CoachSample, UserProfile, Video, VideoAnalysis
+from app.ranking.feed_query import FeedSort, apply_feed_sort, feed_recommendations_query
 from app.ranking.personalize import watch_next
 from app.vision.pipeline import enroll_coach_samples
 from app.web.flash import ERR, OK, redirect_with_flash
@@ -90,6 +90,7 @@ def feed(
     db: Session = Depends(get_db),
     page: int = Query(1),
     per_page: int = Query(30),
+    sort: FeedSort = Query("recency"),
 ):
     page = max(1, page)
     per_page = max(1, min(30, per_page))
@@ -100,7 +101,7 @@ def feed(
         page = total_pages
     offset = (page - 1) * per_page
     recs = (
-        base.order_by(Recommendation.score.desc())
+        apply_feed_sort(base, sort)
         .offset(offset)
         .limit(per_page)
         .all()
@@ -115,6 +116,7 @@ def feed(
             "items": items,
             "page": page,
             "per_page": per_page,
+            "sort": sort,
             "total": total,
             "total_pages": total_pages,
             "has_prev": page > 1,
