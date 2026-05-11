@@ -5,13 +5,13 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Form, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
 from app.core.db import get_db
 from app.ingest.url_validate import coach_sample_url_dedupe_key, validate_coach_sample_url
 from app.models import Coach, CoachSample, Recommendation, UserProfile, Video, VideoAnalysis
+from app.ranking.feed_query import feed_recommendations_query
 from app.ranking.personalize import watch_next
 from app.vision.pipeline import enroll_coach_samples
 from app.web.flash import ERR, OK, redirect_with_flash
@@ -93,14 +93,14 @@ def feed(
 ):
     page = max(1, page)
     per_page = max(1, min(30, per_page))
-    total = db.query(func.count(Recommendation.id)).scalar() or 0
+    base = feed_recommendations_query(db)
+    total = base.count()
     total_pages = max(1, math.ceil(total / per_page)) if total else 1
     if page > total_pages and total > 0:
         page = total_pages
     offset = (page - 1) * per_page
     recs = (
-        db.query(Recommendation)
-        .order_by(Recommendation.score.desc())
+        base.order_by(Recommendation.score.desc())
         .offset(offset)
         .limit(per_page)
         .all()

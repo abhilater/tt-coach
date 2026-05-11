@@ -3,11 +3,11 @@ from __future__ import annotations
 import math
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.db import get_db
 from app.models import Recommendation, Video, VideoAnalysis
+from app.ranking.feed_query import feed_recommendations_query
 
 router = APIRouter(tags=["api"])
 
@@ -25,14 +25,14 @@ def api_feed(
 ):
     page = max(1, page)
     per_page = max(1, min(30, per_page))
-    total = db.query(func.count(Recommendation.id)).scalar() or 0
+    base = feed_recommendations_query(db)
+    total = base.count()
     total_pages = max(1, math.ceil(total / per_page)) if total else 1
     if page > total_pages and total > 0:
         page = total_pages
     offset = (page - 1) * per_page
     recs = (
-        db.query(Recommendation)
-        .order_by(Recommendation.score.desc())
+        base.order_by(Recommendation.score.desc())
         .offset(offset)
         .limit(per_page)
         .all()

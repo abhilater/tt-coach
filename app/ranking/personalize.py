@@ -5,6 +5,7 @@ from collections import Counter
 from sqlalchemy.orm import Session
 
 from app.models import Recommendation, Video, VideoAnalysis
+from app.ranking.feed_query import feed_recommendations_query
 
 
 def tag_overlap_score(tags_a: list[str], tags_b: list[str]) -> float:
@@ -20,7 +21,10 @@ def watch_next(db: Session, video_id: int, limit: int = 5) -> list[Video]:
     base = db.query(VideoAnalysis).filter(VideoAnalysis.video_id == video_id).first()
     if not base or not base.tags:
         recs = (
-            db.query(Recommendation).order_by(Recommendation.score.desc()).limit(limit).all()
+            feed_recommendations_query(db)
+            .order_by(Recommendation.score.desc())
+            .limit(limit)
+            .all()
         )
         return [r.video for r in recs if r.video_id != video_id][:limit]
 
